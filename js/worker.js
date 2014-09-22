@@ -24,25 +24,27 @@ $(function() {
 						var url = $("#workerUrl").val();
 						var type = $("#workerType").val()
 						if (type === "rest") {
-							if (!isUrlValid(url)) {
-								addAlert($("#startWorker"), "Invalid URL: "
-										+ url);
-								return;
-							}
-
-							var startResult = startRestWorker(url)
-							if (startResult == false) {
-							}
-							startResult.done(function() {
-								console.log("OK");
-							}).fail(
-									function(a, b, c) {
-										addAlert($("#startWorker"),
-												"Error while registering to master at: "
-														+ url);
-									}).always(function() {
-								console.log("FINISHED");
-							})
+							alert("Currently not supported");
+							return;
+							// if (!isUrlValid(url)) {
+							// addAlert($("#startWorker"), "Invalid URL: "
+							// + url);
+							// return;
+							// }
+							//
+							// var startResult = startRestWorker(url)
+							// if (startResult == false) {
+							// }
+							// startResult.done(function() {
+							// console.log("OK");
+							// }).fail(
+							// function(a, b, c) {
+							// addAlert($("#startWorker"),
+							// "Error while registering to master at: "
+							// + url);
+							// }).always(function() {
+							//								console.log("FINISHED");
+							//							})
 						} else if (type === "websocket") {
 							if (!isUrlValid(url)) {
 								addAlert($("#startWorker"), "Invalid URL: "
@@ -100,36 +102,41 @@ function startWebSocketWorker(url) {
 	updateReport(connection.worker);
 
 	connection.onopen = function() {
-		connection.send(registrationRequest());
+		connection.send(workInitRequest());
 		connection.worker.state = "connected";
 		updateReport(connection.worker);
 	};
 
 	// Log messages from the server
 	connection.onmessage = function(message) {
-		var response = JSON.parse(message.data);
-		if (response.type == "REGISTRATION_RESPONSE") {
+		var inputMessage = JSON.parse(message.data);
+		if (inputMessage.type == "REGISTRATION_RESPONSE") {
+			// Not needed in the case of sum
 			connection.send(workInitRequest());
 			connection.worker.state = "registration";
 			updateReport(connection.worker);
-		} else if (response.type == "WORK_INIT_RESPONSE") {
-			connection.worker.state = "init";
-			updateReport(connection.worker);
+		} else if (inputMessage.type == "WORK_INIT_RESPONSE") {
+			if (!checkResponseType(inputMessage)) {
+				connection.worker.state = "error";
+				updateReport(connection.worker);
+			} else {
+				connection.worker.state = "init";
+				updateReport(connection.worker);
 
-			distances = response.data[0];
-			var task = response.data[1];
+				var data = inputMessage.task[1].data[1];
 
-			var computation = computeResult(task);
-			var resultMessage = workRequest(message, task, computation);
-			connection.send(resultMessage);
+				var computationResult = computeResult(data);
+				var resultMessage = workRequest(inputMessage, computationResult);
+				connection.send(resultMessage);
 
-			connection.worker.state = "running";
-			updateReport(connection.worker);
-			connection.worker.count++;
-		} else if (response.type == "WORK_RESPONSE") {
-			var task = response.data;
-			var computation = computeResult(task);
-			var resultMessage = workRequest(message, task, computation);
+				connection.worker.state = "running";
+				updateReport(connection.worker);
+				connection.worker.count++;
+			}
+		} else if (inputMessage.type == "WORK_RESPONSE") {
+			var task = inputMessage.data;
+			var computationResult = computeResult(task);
+			var resultMessage = workRequest(message, computationResult);
 			connection.send(resultMessage);
 
 			connection.worker.count++;
@@ -137,10 +144,11 @@ function startWebSocketWorker(url) {
 			if (connection.worker.count % 1000 == 0) {
 				updateReport(connection.worker);
 			}
-		} else if (response.type == "SHUTDOWN") {
+		} else if (inputMessage.type == "SHUTDOWN") {
 			console.log("Got SHUTDOWN");
 			connection.worker.state = "finished";
 			updateReport(connection.worker);
+			connection.close();
 		}
 	};
 
@@ -158,6 +166,10 @@ function startWebSocketWorker(url) {
 	};
 
 	connection.onclose = function(session) {
+		if (connection.worker.state == "running") {
+			connection.worker.state = "finished";
+		}
+		updateReport(connection.worker);
 	}
 }
 
@@ -172,44 +184,50 @@ function registrationRequest() {
 function workInitRequest() {
 	var message = {
 		type : "WORK_INIT_REQUEST",
-		data : null
+		task : null
 	}
 	return JSON.stringify(message);
 }
 
-function workRequest(input, task, data) {
-	var message = {
-		type : "WORK_REQUEST",
-		data : {
-			id : task.id,
-			slot : task.slot,
-			result : data
-		}
-	}
+function workRequest(inputMessage, data) {
+	var message = inputMessage;
+	message.type = "WORK_REQUEST";
+	message.task[1].data = data
+
 	var result = JSON.stringify(message);
 
-	var idPos = input.data.search("\"id\"");
-	var idStart = input.data.indexOf(":", idPos) + 1;
-	var idEnd = input.data.indexOf(",", idStart);
-	var id = input.data.substr(idStart, idEnd - idStart);
-
-	return result.replace(task.id, id);
+	return result;
 }
 
-function computeResult(task) {
-	return computeFitness(task.genome);
-}
-
-function computeFitness(data) {
-	var pathLength = 0.0;
-
-	for (var i = 0; i < data.length - 1; i++) {
-		pathLength += distances[data[i]][data[i + 1]];
+function checkResponseType(response) {
+	if (!$.isArray(response.task)) {
+		console.log("Response is not in the right format, must have a task property, that is of type array");
+		return false;
 	}
+	if (!response.task.length >= 2) {
+		console.log("Response is not in the right format, task array must be of size >= 2");
+		return false;
+	}
+	if (response.task[0] != "at.ac.uibk.dps.biohadoop.tasksystem.queue.ClassNameWrappedTask") {
+		console.log("Response is not in the right format, task array's first entry must be the string \"at.ac.uibk.dps.biohadoop.tasksystem.queue.ClassNameWrappedTask\"");
+		return false;
+	}
+	var taskWrapper = response.task[1];
+	if (taskWrapper.className != "at.ac.uibk.dps.biohadoop.algorithms.sum.AsyncSumComputation") {
+		console.log("Can not compute task of type "
+						+ taskWrapper.className
+						+ "; can only compute tasks of type \"at.ac.uibk.dps.biohadoop.algorithms.sum.AsyncSumComputation\"");
+		return false;
+	}
+	return true;
+}
 
-	pathLength += distances[data[data.length - 1]][data[0]];
-
-	return pathLength;
+function computeResult(data) {
+	var sum = 0;
+	for (var i = 0; i < data.length; i++) {
+		sum += data[i];
+	}
+	return sum;
 }
 
 function updateReport(worker) {
@@ -217,9 +235,12 @@ function updateReport(worker) {
 
 	// check if row exists
 	if (tds.length == 0) {
-		var newRow = $("" + "<tr id='worker-" + worker.id + "'>" + "<td>"
-				+ worker.id + "</td>" + "<td>" + worker.url + "</td>" + "<td>"
-				+ worker.type + "</td>" + "<td>" + worker.state + "</td>"
+		var newRow = $(""
+				+ "<tr id='worker-" + worker.id + "'>"
+				+ "<td>" + worker.id + "</td>"
+				+ "<td>" + worker.url + "</td>"
+				+ "<td>" + worker.type + "</td>"
+				+ "<td>" + worker.state + "</td>"
 				+ "<td>" + worker.count + "</td>"
 				+ "<td><span class='glyphicon glyphicon-remove' style='cursor:pointer'></span></td>"
 				+ "</tr>");
@@ -241,8 +262,8 @@ function updateReport(worker) {
 	$(tds[3]).text(worker.state);
 	$(tds[4]).text(worker.count);
 
-	if (worker.state == "finished" || worker.state == "stopped" || worker.state == "error"
-			|| worker.state == "fatal error") {
+	if (worker.state == "finished" || worker.state == "stopped"
+			|| worker.state == "error" || worker.state == "fatal error") {
 		$(tds[5]).text("");
 	}
 }

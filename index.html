@@ -74,12 +74,16 @@
 							<tr>
 								<td>URL</td>
 								<td><input id="workerUrl" type="text" placeholder="URL"
-									class="form-control" value="ws://kleintroppl:30000/websocket/ga"></td>
+									class="form-control" value="ws://kleintroppl:30000/websocket/DEFAULT_PIPELINE"></td>
 							</tr>
 							<tr>
 								<td>Worker type</td>
-								<td><select id="workerType"><option value="rest">REST</option>
-										<option selected="selected" value="websocket">WebSocket</option></select></td>
+								<td>
+									<select id="workerType">
+										<!-- <option value="rest">REST</option> -->
+										<option selected="selected" value="websocket">WebSocket</option>
+									</select>
+								</td>
 							</tr>
 						</tbody>
 					</table>
