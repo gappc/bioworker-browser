@@ -47,7 +47,6 @@ function isUrlValid(url) {
 
 function startWebSocketWorker(url) {
 	var connection = new WebSocket(url);
-	console.log(connection);
 
 	workerCount++;
 	workers["worker-" + workerCount] = connection;
@@ -93,10 +92,7 @@ function startWebSocketWorker(url) {
 			connection.worker.initialData[taskTypeId] = initialData;
 			task = connection.worker.oldTask;
 		}
-		var start = new Date().getMilliseconds();
-		var result = computeResult(task.data, initialData);
-		var end = new Date().getMilliseconds();
-		task.data = [ "java.lang.Long", (end - start) * 1000000 ];
+		task.data = computeResult(task.data, initialData);
 		connection.send(workRequest(task));
 		connection.worker.count++;
 		connection.worker.state = "running";
@@ -143,6 +139,7 @@ function initialDataRequest(task) {
 }
 
 function computeResult(data, initialData) {
+	var start = new Date().getTime();
 	var matrixA = initialData[1]["matrixA"];
 	var matrixB = initialData[1]["matrixB"];
 	var size = matrixA.length;
@@ -161,16 +158,16 @@ function computeResult(data, initialData) {
 					for (var j = jOuter; j < Math.min(jOuter + blocks[1], size); j++) {
 						for (var k = kOuter; k < Math.min(kOuter + blocks[0],
 								size); k++) {
-							// console.log("doing [" + i + "][" + j + "]");
 							matrixC[i][j] += matrixA[i][k] * matrixB[j][k];
-							// console.log("done [" + i + "][" + j + "]");
 						}
 					}
 				}
 			}
 		}
 	}
-	return matrixC;
+	var end = new Date().getTime();
+	var timeTaken = (end - start) * 1000000;
+	return [ "java.lang.Long", timeTaken ];
 }
 
 function updateReport(worker) {
