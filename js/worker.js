@@ -15,6 +15,17 @@ $(function() {
 			$(this).parent().addClass("active");
 		}
 	});
+	$("a", $(".navbar-right")).on("click", function(event, a, b, c) {
+		var page = $(this).attr("href");
+		if (page != null && page.length > 0) {
+			var element = page.substr(1);
+			$(".main").not(":hidden").hide();
+			$("#" + element).show();
+
+			$(".active", navSidebar).removeClass("active");
+			$(this).parent().addClass("active");
+		}
+	});
 
 	// add new worker
 	$("#startWorker").on("click", function() {
